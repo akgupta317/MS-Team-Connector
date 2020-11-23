@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset='utf-8'>
+    <meta http-equiv='X-UA-Compatible' content='IE=edge'>
+    <title>Page Title</title>
+    <meta name='viewport' content='width=device-width, initial-scale=1'>
+    <script src='https://statics.teams.microsoft.com/sdk/v1.2/js/MicrosoftTeams.min.js'></script>
+</head>
+
+<body>
+
+    <!-- You should NEVER trigger a login without any user interaction. It is likely that the spawning popup will be blocked or act weird! -->
+    <button id="login" onclick="login()">Authenticate before configuring the connector!</button>
+
+    <div id="config" style="display: none;">
+       Please click on Save to configure application 
+    </div>
+
+    <script>
+        //You always have to initialize the teams SDK first before being able to call any other method
+        microsoftTeams.initialize();
+
+    
+
+        //Login function to authenticate the user before configuring the connector
+        function login() {
+            microsoftTeams.authentication.authenticate({
+                //The user must always be redirect to a page on your domain. You cannot redirect directly to the login page of your choice
+                url: window.location.origin + "/login",
+                //Specify the width and height of the spawning popup
+                width: 600,
+                height: 535,
+                //Specify callbacks when the authentication succeeds or fails
+                successCallback: function (result) {
+                    console.log(result);
+                    configure();
+                },
+                failureCallback: function (reason) {
+                    console.error(reason);
+                }
+            });
+        }
+
+
+        //Function to configure the actual connector
+        function configure() {
+            microsoftTeams.getContext(c => { console.log(c) });
+            document.getElementById("login").style.display = "none";
+            document.getElementById("config").style.display = "block";
+            var baseURL=window.location.origin;
+            //Store some settings in the configuration of the connector
+            microsoftTeams.settings.setSettings({
+                //Important when referencing your connector from somewhere else within Teams
+                entityId: "smartglobalId",
+                //This name will be shown to channel admins under "configured connectors" - Use something that helps admins to identify this specific connection
+                configName: "smartglobal",
+                //The URL to the configuration page for further config changes
+                contentUrl: baseURL
+            });
+
+            //By calling getSettings() you get (among other information) the webhook URL that you will use to POST messages into the channel
+            microsoftTeams.settings.getSettings(s => {
+                microsoftTeams.settings.registerOnSaveHandler((saveEvent) => {
+                    saveConfig(s.webhookUrl).then(() => {
+                        saveEvent.notifySuccess();
+                    }).catch(e => {
+                        console.error("Something went wrong!");
+                    })
+                });
+                //You have to notify Teams that the saving process was successful, otherwise the save operation will time out and display an error
+                microsoftTeams.settings.setValidityState(true);
+            });
+        }
+
+        async function saveConfig(webhook) {
+            return new Promise((resolve, reject) => {
+                microsoftTeams.getContext(c => {
+                    fetch("/configDetails", {
+                        "method": "POST",
+                        "headers": {
+                            "Content-Type": "application/json"
+                        },
+                        "body": JSON.stringify({
+                            team: c.groupId,
+                            tenant: c.tId,
+                            channel: c.channelId,
+                            configuredBy: c.userObjectId,
+                            webhook: webhook
+                        })
+                    }).then(resp => {
+                        if (resp.status === 200) resolve();
+                        else reject();
+                    })
+                })
+
+            })
+
+
+        }
+    </script>
+</body>
+
+</html>
